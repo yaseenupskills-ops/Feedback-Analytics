@@ -3,7 +3,6 @@ const { body, query } = require('express-validator');
 const db = require('../config/db');
 const authMiddleware = require('../middleware/auth');
 const validate = require('../middleware/validate');
-const { analyzeFeedback } = require('../services/aiClient');
 
 const router = express.Router();
 
@@ -45,24 +44,6 @@ const feedbackQueryValidators = [
     .isIn(['newest', 'oldest', 'rating_desc', 'rating_asc'])
     .withMessage('sort must be one of: newest, oldest, rating_desc, rating_asc'),
 ];
-
-/**
- * Helper to look up a category ID by its name with fallback to 'Other'
- */
-async function getCategoryIdByName(categoryName) {
-  if (!categoryName) return null;
-  const result = await db.query(
-    'SELECT id FROM categories WHERE name ILIKE $1',
-    [categoryName]
-  );
-  if (result.rows.length > 0) {
-    return result.rows[0].id;
-  }
-  const fallback = await db.query(
-    "SELECT id FROM categories WHERE name = 'Other'"
-  );
-  return fallback.rows.length > 0 ? fallback.rows[0].id : null;
-}
 
 /**
  * Helper to build dynamic parameterized filter query for feedback
@@ -117,7 +98,11 @@ function buildFeedbackFilterQuery(queryParams) {
 
 /**
  * POST /api/feedback
- * Public endpoint: Submit feedback and trigger AI analysis
+ * Public endpoint: Submit feedback and enqueue it for background AI analysis.
+ *
+ * The comment is saved synchronously and a job is added to `analysis_queue`.
+ * The background worker performs the AI call, so submission never blocks on the
+ * (potentially slow) AI service and transient AI failures are retried.
  */
 router.post(
   '/',
@@ -158,47 +143,26 @@ router.post(
       const { rows } = await db.query(insertQuery, [comment, rating, finalName, is_anonymous]);
       const savedFeedback = rows[0];
 
-      // 2. Call AI service and store in analysis_results
-      let analysisResult = null;
+      // 2. Enqueue a background analysis job (idempotent per feedback item).
       try {
-        const analysis = await analyzeFeedback(comment);
-        const categoryId = await getCategoryIdByName(analysis.category);
-
-        const insertAnalysisQuery = `
-          INSERT INTO analysis_results (feedback_id, sentiment, confidence, category_id, keywords)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (feedback_id) DO UPDATE SET
-            sentiment = EXCLUDED.sentiment,
-            confidence = EXCLUDED.confidence,
-            category_id = EXCLUDED.category_id,
-            keywords = EXCLUDED.keywords,
-            analyzed_at = now()
-          RETURNING id, feedback_id, sentiment, confidence, category_id, keywords
-        `;
-        await db.query(insertAnalysisQuery, [
-          savedFeedback.id,
-          analysis.sentiment,
-          analysis.confidence,
-          categoryId,
-          analysis.keywords || [],
-        ]);
-
-        analysisResult = {
-          sentiment: analysis.sentiment,
-          category: analysis.category,
-          confidence: analysis.confidence,
-        };
-      } catch (aiError) {
-        // If AI service fails or times out, log error and preserve saved feedback with null analysis
-        console.error(`AI analysis failed for feedback ID ${savedFeedback.id}:`, aiError.message);
+        await db.query(
+          `INSERT INTO analysis_queue (feedback_id)
+           VALUES ($1)
+           ON CONFLICT (feedback_id) DO NOTHING`,
+          [savedFeedback.id]
+        );
+      } catch (enqueueError) {
+        // The feedback itself is safely stored; log so ops can re-enqueue later.
+        console.error(`Failed to enqueue analysis for feedback ID ${savedFeedback.id}:`, enqueueError.message);
       }
 
-      // Return { id, sentiment, category, confidence } according to contract
+      // Analysis runs asynchronously; sentiment/category/confidence arrive later.
       return res.status(201).json({
         id: savedFeedback.id,
-        sentiment: analysisResult ? analysisResult.sentiment : null,
-        category: analysisResult ? analysisResult.category : null,
-        confidence: analysisResult ? analysisResult.confidence : null,
+        sentiment: null,
+        category: null,
+        confidence: null,
+        analysis_status: 'pending',
       });
     } catch (err) {
       next(err);
@@ -208,57 +172,31 @@ router.post(
 
 /**
  * POST /api/feedback/reanalyze
- * Admin endpoint: Analyze all feedback records that currently lack analysis_results
+ * Admin endpoint: enqueue every feedback item that does not yet have a completed
+ * ('done') analysis. This covers both never-queued and previously-failed items.
+ *
+ * Enqueueing is a single upsert, so the endpoint returns immediately; the worker
+ * processes the backlog in the background.
  */
 router.post('/reanalyze', authMiddleware, async (req, res, next) => {
   try {
-    // Find unanalyzed feedback items
-    const unanalyzedQuery = `
-      SELECT f.id, f.comment
+    const { rowCount } = await db.query(`
+      INSERT INTO analysis_queue (feedback_id, status, attempts, next_attempt_at)
+      SELECT f.id, 'pending', 0, now()
       FROM feedback f
-      LEFT JOIN analysis_results ar ON f.id = ar.feedback_id
-      WHERE ar.id IS NULL
-      ORDER BY f.id ASC
-    `;
-    const { rows: pendingRows } = await db.query(unanalyzedQuery);
+      LEFT JOIN analysis_queue q ON f.id = q.feedback_id
+      WHERE q.id IS NULL OR q.status <> 'done'
+      ON CONFLICT (feedback_id) DO UPDATE SET
+        status = 'pending',
+        attempts = 0,
+        last_error = NULL,
+        next_attempt_at = now(),
+        updated_at = now()
+    `);
 
-    let succeeded = 0;
-    let failed = 0;
-
-    for (const item of pendingRows) {
-      try {
-        const analysis = await analyzeFeedback(item.comment);
-        const categoryId = await getCategoryIdByName(analysis.category);
-
-        const insertAnalysisQuery = `
-          INSERT INTO analysis_results (feedback_id, sentiment, confidence, category_id, keywords)
-          VALUES ($1, $2, $3, $4, $5)
-          ON CONFLICT (feedback_id) DO UPDATE SET
-            sentiment = EXCLUDED.sentiment,
-            confidence = EXCLUDED.confidence,
-            category_id = EXCLUDED.category_id,
-            keywords = EXCLUDED.keywords,
-            analyzed_at = now()
-        `;
-        await db.query(insertAnalysisQuery, [
-          item.id,
-          analysis.sentiment,
-          analysis.confidence,
-          categoryId,
-          analysis.keywords || [],
-        ]);
-        succeeded++;
-      } catch (err) {
-        console.error(`Reanalysis failed for feedback ID ${item.id}:`, err.message);
-        failed++;
-      }
-    }
-
-    return res.json({
-      message: 'Reanalysis complete',
-      total: pendingRows.length,
-      succeeded,
-      failed,
+    return res.status(202).json({
+      message: 'Reanalysis queued',
+      queued: rowCount,
     });
   } catch (err) {
     next(err);
@@ -335,6 +273,53 @@ router.get('/export.csv', authMiddleware, feedbackQueryValidators, validate, asy
 });
 
 /**
+ * GET /api/feedback/:id/status
+ * Public endpoint: returns the analysis status for a single submission so the
+ * submitter-facing page can track async analysis. Exposes analysis only — never
+ * comment text, submitter name, or any PII.
+ */
+router.get('/:id/status', async (req, res, next) => {
+  try {
+    const id = Number.parseInt(req.params.id, 10);
+    if (!Number.isInteger(id) || id < 1) {
+      return res.status(400).json({ error: 'A valid feedback id is required' });
+    }
+
+    const { rows } = await db.query(
+      `
+        SELECT
+          f.id,
+          COALESCE(q.status, CASE WHEN ar.id IS NOT NULL THEN 'done' ELSE 'pending' END) AS analysis_status,
+          ar.sentiment,
+          ar.confidence,
+          c.name AS category
+        FROM feedback f
+        LEFT JOIN analysis_results ar ON f.id = ar.feedback_id
+        LEFT JOIN categories c ON ar.category_id = c.id
+        LEFT JOIN analysis_queue q ON f.id = q.feedback_id
+        WHERE f.id = $1
+      `,
+      [id]
+    );
+
+    if (rows.length === 0) {
+      return res.status(404).json({ error: 'Feedback not found' });
+    }
+
+    const row = rows[0];
+    return res.json({
+      id: row.id,
+      analysis_status: row.analysis_status,
+      sentiment: row.sentiment ?? null,
+      category: row.category ?? null,
+      confidence: row.confidence === null || row.confidence === undefined ? null : Number(row.confidence),
+    });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/feedback
  * Admin endpoint: Paginated list of comments with joined analysis and categories
  */
@@ -357,6 +342,7 @@ router.get(
         FROM feedback f
         LEFT JOIN analysis_results ar ON f.id = ar.feedback_id
         LEFT JOIN categories c ON ar.category_id = c.id
+        LEFT JOIN analysis_queue q ON f.id = q.feedback_id
         ${whereClause}
       `;
       const countResult = await db.query(countQuery, values);
@@ -377,10 +363,12 @@ router.get(
           ar.keywords,
           ar.analyzed_at,
           c.id AS category_id,
-          c.name AS category
+          c.name AS category,
+          COALESCE(q.status, CASE WHEN ar.id IS NOT NULL THEN 'done' ELSE 'pending' END) AS analysis_status
         FROM feedback f
         LEFT JOIN analysis_results ar ON f.id = ar.feedback_id
         LEFT JOIN categories c ON ar.category_id = c.id
+        LEFT JOIN analysis_queue q ON f.id = q.feedback_id
         ${whereClause}
         ${orderClause}
         LIMIT $${dataValues.length - 1} OFFSET $${dataValues.length}

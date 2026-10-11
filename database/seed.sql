@@ -3,7 +3,7 @@
 -- ==============================================================================
 
 -- Clear any existing data and reset identity sequences
-TRUNCATE TABLE analysis_results, feedback, categories, users RESTART IDENTITY CASCADE;
+TRUNCATE TABLE analysis_queue, analysis_results, feedback, categories, users RESTART IDENTITY CASCADE;
 
 -- ------------------------------------------------------------------------------
 -- 1. Predefined Categories

@@ -107,12 +107,27 @@ app.use(errorHandler);
 
 // Start server if executed directly
 if (process.env.NODE_ENV !== 'test') {
+  const { startAnalysisWorker, stopAnalysisWorker } = require('./jobs/analysisWorker');
+
   const server = app.listen(PORT, () => {
     console.log(`Backend server running on http://localhost:${PORT}`);
   });
   server.on('error', (err) => {
     console.error(`Failed to start server on port ${PORT}:`, err.message);
   });
+
+  // Background AI analysis worker (decoupled from the submit request).
+  startAnalysisWorker();
+
+  const shutdown = (signal) => {
+    console.log(`\nReceived ${signal}, shutting down…`);
+    stopAnalysisWorker();
+    server.close(() => process.exit(0));
+    // Force-exit if connections hang.
+    setTimeout(() => process.exit(0), 5000).unref();
+  };
+  process.on('SIGINT', () => shutdown('SIGINT'));
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
 }
 
 module.exports = app;

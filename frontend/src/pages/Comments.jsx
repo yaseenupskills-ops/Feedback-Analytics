@@ -19,6 +19,7 @@ import {
   RotateCcw,
   LayoutDashboard,
   X,
+  Loader2,
 } from 'lucide-react';
 
 const CATEGORIES = [
@@ -431,7 +432,19 @@ export default function Comments() {
 
                     {/* Sentiment */}
                     <td className="py-4 px-4 align-top whitespace-nowrap">
-                      {getSentimentBadge(item.sentiment, item.confidence)}
+                      {item.analysis_status === 'pending' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-amber-50 text-amber-700 border border-amber-200">
+                          <Loader2 className="w-3.5 h-3.5 text-amber-600 animate-spin" />
+                          <span>Analyzing…</span>
+                        </span>
+                      ) : item.analysis_status === 'failed' ? (
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-semibold bg-rose-50 text-rose-700 border border-rose-200">
+                          <AlertCircle className="w-3.5 h-3.5 text-rose-600" />
+                          <span>Analysis failed</span>
+                        </span>
+                      ) : (
+                        getSentimentBadge(item.sentiment, item.confidence)
+                      )}
                     </td>
 
                     {/* Category */}

@@ -56,14 +56,14 @@ Clicking any chart segment jumps to the comments table with that filter applied.
 |  React (Vite)    |  HTTPS | Node.js + Express|  SQL   |  Supabase / Neon |
 |  Vercel          |  JWT   |  Render          |        |  Render Postgres |
 +------------------+        +--------+---------+        +------------------+
-                                     |
-                                     | HTTP (server-to-server, internal)
-                                     v
-                           +---------------------+
-                           |   AI Service        |
-                           |  FastAPI + VADER    |
-                           |  keyword-rule       |
-                           |  classifier         |
+                                     |                            ^
+                                     | HTTP (server-to-server)    | analysis_queue
+                                     v                            | (outbox)
+                           +---------------------+        +-------+----------+
+                           |   AI Service        | <----- | Analysis Worker   |
+                           |  FastAPI + VADER    |        | (in-process in    |
+                           |  keyword-rule       |        |  the backend)     |
+                           |  classifier         |        +------------------+
                            |  Render             |
                            +---------------------+
 ```
@@ -72,9 +72,11 @@ Clicking any chart segment jumps to the comments table with that filter applied.
    header — it never talks to the AI service directly).
 2. The Express API validates input, enforces auth, and stores data in PostgreSQL
    through parameterized queries.
-3. When feedback is submitted, the backend calls the FastAPI AI service, which
-   returns `{ sentiment, confidence, category, keywords }`; the result is stored
-   one-to-one with the feedback row.
+3. On submit, the backend saves the comment and enqueues a job in `analysis_queue`,
+   then responds immediately. A background worker (running in the same backend
+   process) picks up the job, calls the FastAPI AI service — which returns
+   `{ sentiment, confidence, category, keywords }` — and stores the result
+   one-to-one with the feedback row. Transient failures are retried with backoff.
 
 ## Tech Stack
 
@@ -105,7 +107,8 @@ feedback-analytics/
 │       ├── config/db.js
 │       ├── middleware/            # auth.js, validate.js, errorHandler.js
 │       ├── routes/                # auth.js, feedback.js, analytics.js
-│       └── services/aiClient.js
+│       ├── jobs/analysisWorker.js # background AI analysis worker (queue consumer)
+│       └── services/aiClient.js   # AI client with retry + backoff
 ├── ai-service/
 │   ├── requirements.txt
 │   ├── main.py                    # FastAPI entry point (/health, /analyze)
@@ -194,6 +197,10 @@ deployment.**
 | `DATABASE_SSL`   | No       | unset                   | Set `true` for Supabase / Neon (TLS). `?sslmode=require` in the URL also works.  |
 | `JWT_SECRET`     | Yes      | —                       | Long random secret used to sign admin JWTs. Use `openssl rand -hex 32`.          |
 | `AI_SERVICE_URL` | No       | `http://localhost:8000` | Base URL of the FastAPI AI service.                                              |
+| `AI_MAX_ATTEMPTS`| No       | `3`                     | Attempts per AI call before the analysis job fails (retries use exponential backoff). |
+| `AI_TIMEOUT_MS`  | No       | `5000`                  | Per-attempt timeout for the AI service call, in milliseconds.                    |
+| `ANALYSIS_POLL_INTERVAL_MS` | No | `2000`          | How often the background analysis worker polls the queue, in milliseconds.       |
+| `ANALYSIS_BATCH_SIZE` | No  | `5`                     | Maximum jobs the worker claims per poll.                                         |
 | `CORS_ORIGIN`    | No       | localhost dev origins   | Comma-separated allowed origins, e.g. `https://myapp.vercel.app,http://localhost:5173` |
 
 The server fails fast at startup if `DATABASE_URL` or `JWT_SECRET` is missing.
@@ -253,19 +260,34 @@ Authenticate an admin and obtain a JWT.
 
 #### `POST /feedback`
 
-Submit feedback. The comment is saved, sent to the AI service, and analyzed.
-Succeeds even if the AI service is unavailable (returns `null` analysis fields).
+Submit feedback. The comment is saved synchronously and a job is added to the
+`analysis_queue`; a background worker performs the AI analysis afterwards. The
+response therefore always reports `analysis_status: "pending"` with `null`
+analysis fields — poll `GET /feedback/:id/status` for the result. This keeps
+submission fast and makes analysis resilient to AI-service downtime.
 
 ```json
 // Request
 { "comment": "The wi-fi in the dorms keeps dropping.", "rating": 2, "submitter_name": null, "is_anonymous": true }
 
 // Response 201
-{ "id": 42, "sentiment": "negative", "category": "Internet", "confidence": 0.955 }
+{ "id": 42, "sentiment": null, "category": null, "confidence": null, "analysis_status": "pending" }
 ```
 
 Validation: `comment` required (≤ 2000 chars), `rating` integer 1–5 (optional),
 `submitter_name` ≤ 255 chars (optional), `is_anonymous` boolean (optional).
+
+#### `GET /feedback/:id/status`
+
+Public, analysis-only status for a single submission (never returns comment text
+or submitter name). Used by the submitter-facing page to wait for async analysis.
+
+```json
+// Response 200 (analysis finished)
+{ "id": 42, "analysis_status": "done", "sentiment": "negative", "category": "Internet", "confidence": 0.955 }
+```
+
+`analysis_status` is `pending`, `done`, or `failed` (after the worker exhausts its retries).
 
 ### Admin endpoints (JWT required — `Authorization: Bearer <token>`)
 
@@ -292,7 +314,8 @@ Paginated list of comments joined with their analysis results.
       "is_anonymous": true, "created_at": "2026-08-18T06:54:15.786Z",
       "sentiment": "negative", "confidence": 0.955,
       "keywords": ["wi-fi", "drops", "connectivity"], "analyzed_at": "...",
-      "category_id": 4, "category": "Internet"
+      "category_id": 4, "category": "Internet",
+      "analysis_status": "done"
     }
   ],
   "pagination": { "total": 16, "page": 1, "limit": 10, "totalPages": 2 }
@@ -307,11 +330,13 @@ with `=`, `+`, `-`, or `@` are neutralized to prevent spreadsheet formula attack
 
 #### `POST /feedback/reanalyze`
 
-Runs AI analysis on every feedback row that currently lacks an analysis result.
+Enqueues background analysis for every feedback row that does not yet have a
+completed (`done`) analysis — i.e. both never-analyzed and previously failed rows.
+Returns immediately; the worker processes the backlog.
 
 ```json
-// Response 200
-{ "message": "Reanalysis complete", "total": 3, "succeeded": 3, "failed": 0 }
+// Response 202
+{ "message": "Reanalysis queued", "queued": 3 }
 ```
 
 #### `GET /analytics/summary`
@@ -321,7 +346,9 @@ Runs AI analysis on every feedback row that currently lacks an analysis result.
 {
   "totalFeedback": 47,
   "averageRating": 3.17,
-  "sentimentCounts": { "positive": 20, "neutral": 11, "negative": 16 }
+  "sentimentCounts": { "positive": 20, "neutral": 11, "negative": 16 },
+  "pendingAnalysis": 0,
+  "failedAnalysis": 0
 }
 ```
 

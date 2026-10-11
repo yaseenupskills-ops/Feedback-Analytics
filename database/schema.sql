@@ -3,6 +3,7 @@
 -- ==============================================================================
 
 -- Drop existing tables if they exist (in reverse dependency order)
+DROP TABLE IF EXISTS analysis_queue CASCADE;
 DROP TABLE IF EXISTS analysis_results CASCADE;
 DROP TABLE IF EXISTS feedback CASCADE;
 DROP TABLE IF EXISTS categories CASCADE;
@@ -50,6 +51,23 @@ CREATE TABLE analysis_results (
     analyzed_at TIMESTAMPTZ DEFAULT now()
 );
 
+-- 5. Analysis Queue Table
+-- Background-work outbox: AI analysis jobs are enqueued on submit and picked up
+-- by the analysis worker (backend/src/jobs/analysisWorker.js). Decouples the
+-- public submit request from AI latency/failures and enables retries with backoff.
+CREATE TABLE analysis_queue (
+    id SERIAL PRIMARY KEY,
+    feedback_id INT UNIQUE NOT NULL REFERENCES feedback(id) ON DELETE CASCADE,
+    status TEXT NOT NULL DEFAULT 'pending'
+        CHECK (status IN ('pending', 'failed', 'done')),
+    attempts INT NOT NULL DEFAULT 0,
+    max_attempts INT NOT NULL DEFAULT 3,
+    last_error TEXT,
+    next_attempt_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    created_at TIMESTAMPTZ DEFAULT now(),
+    updated_at TIMESTAMPTZ DEFAULT now()
+);
+
 -- ==============================================================================
 -- Indexes for performance optimization
 -- ==============================================================================
@@ -62,3 +80,6 @@ CREATE INDEX idx_analysis_results_sentiment ON analysis_results(sentiment);
 
 -- Index for joining and filtering analysis results by category
 CREATE INDEX idx_analysis_results_category_id ON analysis_results(category_id);
+
+-- Index for the analysis worker: find due jobs quickly (status + next_attempt_at)
+CREATE INDEX idx_analysis_queue_status_due ON analysis_queue(status, next_attempt_at);

@@ -52,9 +52,12 @@ router.get(
           ROUND(COALESCE(AVG(f.rating), 0), 2)::float AS average_rating,
           COUNT(CASE WHEN ar.sentiment = 'positive' THEN 1 END)::int AS positive_count,
           COUNT(CASE WHEN ar.sentiment = 'neutral' THEN 1 END)::int AS neutral_count,
-          COUNT(CASE WHEN ar.sentiment = 'negative' THEN 1 END)::int AS negative_count
+          COUNT(CASE WHEN ar.sentiment = 'negative' THEN 1 END)::int AS negative_count,
+          COUNT(CASE WHEN q.status = 'pending' THEN 1 END)::int AS pending_analysis,
+          COUNT(CASE WHEN q.status = 'failed' THEN 1 END)::int AS failed_analysis
         FROM feedback f
         LEFT JOIN analysis_results ar ON f.id = ar.feedback_id
+        LEFT JOIN analysis_queue q ON f.id = q.feedback_id
         ${whereClause}
       `;
 
@@ -69,6 +72,8 @@ router.get(
           neutral: summary.neutral_count,
           negative: summary.negative_count,
         },
+        pendingAnalysis: summary.pending_analysis,
+        failedAnalysis: summary.failed_analysis,
       });
     } catch (err) {
       next(err);

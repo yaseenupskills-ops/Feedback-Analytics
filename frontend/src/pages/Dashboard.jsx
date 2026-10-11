@@ -155,6 +155,27 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* Background analysis status banner */}
+      {!loading && summary && (summary.pendingAnalysis > 0 || summary.failedAnalysis > 0) && (
+        <div className="mb-6 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-xs sm:text-sm flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+          <span>
+            {summary.pendingAnalysis > 0 && (
+              <>
+                {summary.pendingAnalysis} comment{summary.pendingAnalysis === 1 ? '' : 's'} awaiting analysis
+              </>
+            )}
+            {summary.pendingAnalysis > 0 && summary.failedAnalysis > 0 && ' · '}
+            {summary.failedAnalysis > 0 && (
+              <>
+                {summary.failedAnalysis} failed analysis
+              </>
+            )}
+            . These appear in the charts as the background worker finishes.
+          </span>
+        </div>
+      )}
+
       {/* Summary Metrics Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5 mb-8">
         {/* Card 1: Total Feedback */}
