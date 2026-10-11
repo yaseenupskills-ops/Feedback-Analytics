@@ -1,0 +1,54 @@
+# -----------------------------------------------------------------------------
+# Render Blueprint — deploys the backend API, the AI service, and (optionally)
+# a managed PostgreSQL database with a single `render.yaml`.
+#
+# Usage:
+#   1. Push this repository to GitHub/GitLab.
+#   2. In Render: "New +" -> "Blueprint" -> select the repo -> "Apply".
+#   3. After the first deploy, open each service and fix the placeholder
+#      values marked with "REPLACE":
+#        - AI_SERVICE_URL  -> the AI service's public URL
+#        - CORS_ORIGIN     -> the deployed frontend URL (Vercel)
+#        - DATABASE_URL    -> optionally replace with a Supabase / Neon string
+# -----------------------------------------------------------------------------
+services:
+  - type: web
+    name: feedback-analytics-backend
+    runtime: node
+    rootDir: backend
+    plan: free
+    buildCommand: npm ci
+    startCommand: node src/server.js
+    healthCheckPath: /api/health
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: feedback-analytics-db
+          property: connectionString
+      - key: DATABASE_SSL
+        value: "true"
+      - key: JWT_SECRET
+        generateValue: true
+      - key: AI_SERVICE_URL
+        # Point at the AI service deployed below (REPLACE if you renamed it).
+        value: https://feedback-analytics-ai.onrender.com
+      - key: CORS_ORIGIN
+        # REPLACE with your deployed Vercel frontend URL. Comma-separate
+        # multiple origins if needed (e.g. localhost during development).
+        value: https://feedback-analytics.vercel.app
+
+  - type: web
+    name: feedback-analytics-ai
+    runtime: python
+    rootDir: ai-service
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+
+# Optional quick-start database. If you prefer Supabase or Neon (recommended),
+# delete this block and set DATABASE_URL on the backend service to your
+# provider's pooled connection string (append ?sslmode=require) instead.
+databases:
+  - name: feedback-analytics-db
+    plan: free

@@ -1,0 +1,382 @@
+{
+  "comments": [
+    "Professor Smith delivers exceptionally clear lectures and engaging slides!",
+    "Campus wifi is awful, disconnects constantly and bandwidth is terrible.",
+    "The library building is open until 10 PM according to standard schedule.",
+    "The newly renovated library study pods and comfortable desks are wonderful.",
+    "The cafeteria lunch was undercooked, cold, and disgusting.",
+    "The instructor is very polite and kind, but the exams are terribly unfair and harsh.",
+    "Tuition fees and parking permit costs are exorbitantly overpriced and unfair.",
+    "The IT helpdesk advisor resolved my computer ticket immediately with fantastic guidance.",
+    "Front desk reception staff provided prompt, polite, and respectful assistance.",
+    "A bird flew into the open courtyard window yesterday morning."
+  ],
+  "results": {
+    "vader": [
+      {
+        "sentiment": "positive",
+        "confidence": 0.679,
+        "category": "Teaching",
+        "keywords": [
+          "professor",
+          "smith",
+          "delivers",
+          "exceptionally",
+          "clear"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.727,
+        "category": "Internet",
+        "keywords": [
+          "campus",
+          "wifi",
+          "awful",
+          "disconnects",
+          "constantly"
+        ]
+      },
+      {
+        "sentiment": "neutral",
+        "confidence": 0.0,
+        "category": "Facilities",
+        "keywords": [
+          "library",
+          "building",
+          "open",
+          "according",
+          "standard"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.791,
+        "category": "Facilities",
+        "keywords": [
+          "newly",
+          "renovated",
+          "library",
+          "study",
+          "pods"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.527,
+        "category": "Food",
+        "keywords": [
+          "cafeteria",
+          "lunch",
+          "undercooked",
+          "cold",
+          "disgusting"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.911,
+        "category": "Teaching",
+        "keywords": [
+          "instructor",
+          "polite",
+          "kind",
+          "exams",
+          "terribly"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.477,
+        "category": "Pricing",
+        "keywords": [
+          "tuition",
+          "fees",
+          "parking",
+          "permit",
+          "costs"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.649,
+        "category": "Support",
+        "keywords": [
+          "helpdesk",
+          "advisor",
+          "resolved",
+          "computer",
+          "ticket"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.459,
+        "category": "Service",
+        "keywords": [
+          "front",
+          "desk",
+          "reception",
+          "staff",
+          "provided"
+        ]
+      },
+      {
+        "sentiment": "neutral",
+        "confidence": 0.0,
+        "category": "Other",
+        "keywords": [
+          "bird",
+          "flew",
+          "open",
+          "courtyard",
+          "window"
+        ]
+      }
+    ],
+    "huggingface": [
+      {
+        "sentiment": "positive",
+        "confidence": 1.0,
+        "category": "Teaching",
+        "keywords": [
+          "professor",
+          "smith",
+          "delivers",
+          "exceptionally",
+          "clear"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.999,
+        "category": "Facilities",
+        "keywords": [
+          "campus",
+          "wifi",
+          "awful",
+          "disconnects",
+          "constantly"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.86,
+        "category": "Facilities",
+        "keywords": [
+          "library",
+          "building",
+          "open",
+          "according",
+          "standard"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 1.0,
+        "category": "Facilities",
+        "keywords": [
+          "newly",
+          "renovated",
+          "library",
+          "study",
+          "pods"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.999,
+        "category": "Food",
+        "keywords": [
+          "cafeteria",
+          "lunch",
+          "undercooked",
+          "cold",
+          "disgusting"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.997,
+        "category": "Facilities",
+        "keywords": [
+          "instructor",
+          "polite",
+          "kind",
+          "exams",
+          "terribly"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.999,
+        "category": "Pricing",
+        "keywords": [
+          "tuition",
+          "fees",
+          "parking",
+          "permit",
+          "costs"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.998,
+        "category": "Support",
+        "keywords": [
+          "helpdesk",
+          "advisor",
+          "resolved",
+          "computer",
+          "ticket"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.995,
+        "category": "Facilities",
+        "keywords": [
+          "front",
+          "desk",
+          "reception",
+          "staff",
+          "provided"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.916,
+        "category": "Other",
+        "keywords": [
+          "bird",
+          "flew",
+          "open",
+          "courtyard",
+          "window"
+        ]
+      }
+    ],
+    "llm": [
+      {
+        "sentiment": "positive",
+        "confidence": 0.679,
+        "category": "Teaching",
+        "keywords": [
+          "professor",
+          "smith",
+          "delivers",
+          "exceptionally",
+          "clear"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.727,
+        "category": "Internet",
+        "keywords": [
+          "campus",
+          "wifi",
+          "awful",
+          "disconnects",
+          "constantly"
+        ]
+      },
+      {
+        "sentiment": "neutral",
+        "confidence": 0.0,
+        "category": "Facilities",
+        "keywords": [
+          "library",
+          "building",
+          "open",
+          "according",
+          "standard"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.791,
+        "category": "Facilities",
+        "keywords": [
+          "newly",
+          "renovated",
+          "library",
+          "study",
+          "pods"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.527,
+        "category": "Food",
+        "keywords": [
+          "cafeteria",
+          "lunch",
+          "undercooked",
+          "cold",
+          "disgusting"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.911,
+        "category": "Teaching",
+        "keywords": [
+          "instructor",
+          "polite",
+          "kind",
+          "exams",
+          "terribly"
+        ]
+      },
+      {
+        "sentiment": "negative",
+        "confidence": 0.477,
+        "category": "Pricing",
+        "keywords": [
+          "tuition",
+          "fees",
+          "parking",
+          "permit",
+          "costs"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.649,
+        "category": "Support",
+        "keywords": [
+          "helpdesk",
+          "advisor",
+          "resolved",
+          "computer",
+          "ticket"
+        ]
+      },
+      {
+        "sentiment": "positive",
+        "confidence": 0.459,
+        "category": "Service",
+        "keywords": [
+          "front",
+          "desk",
+          "reception",
+          "staff",
+          "provided"
+        ]
+      },
+      {
+        "sentiment": "neutral",
+        "confidence": 0.0,
+        "category": "Other",
+        "keywords": [
+          "bird",
+          "flew",
+          "open",
+          "courtyard",
+          "window"
+        ]
+      }
+    ]
+  }
+}
